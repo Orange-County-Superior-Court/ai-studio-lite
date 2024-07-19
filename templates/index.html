@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-modal/0.9.2/jquery.modal.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-modal/0.9.2/jquery.modal.min.css" />
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script>
+
+        let mostRecentMessage = "";
+        let botIconSource = "{{ url_for('static', filename='orange.png') }}"
+
+        async function sendUserMessage() {
+            const userMessage = document.getElementById("newusermessage");
+            const userMessageText = userMessage.value;
+
+            if (!userMessageText) return;
+
+            const lastResponse = document.getElementById("lastresponse");
+            if (lastResponse) {
+                lastResponse.removeAttribute('id');
+            }
+
+            const lastUserMessage = document.getElementById("lastusermessage");
+            if (lastUserMessage) {
+                lastUserMessage.removeAttribute('id');
+            }
+            
+            let newElement = `<div class="user-message" id="lastusermessage"><span class="user-message__text">${userMessageText}</span></div>`;
+            $("#chatarea").append(newElement);
+
+            const newLastUserMessage = document.getElementById("lastusermessage");
+            newLastUserMessage.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+
+            let newResponse = `<div class="bot-response" id="lastresponse"><img class="bot-response__avatar" src="{{ url_for('static', filename='orange.png') }}" alt="Orange bot"/><span class="bot-response__text"><svg class="bot-response__loading-indicator" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle fill="#000000" stroke="#000000" stroke-width="6" r="15" cx="40" cy="65"><animate attributeName="cy" calcMode="spline" dur="2" values="65;135;65;" keySplines=".5 0 .5 1;.5 0 .5 1" repeatCount="indefinite" begin="-.4"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" r="15" cx="100" cy="65"><animate attributeName="cy" calcMode="spline" dur="2" values="65;135;65;" keySplines=".5 0 .5 1;.5 0 .5 1" repeatCount="indefinite" begin="-.2"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" r="15" cx="160" cy="65"><animate attributeName="cy" calcMode="spline" dur="2" values="65;135;65;" keySplines=".5 0 .5 1;.5 0 .5 1" repeatCount="indefinite" begin="0"></animate></circle></svg></span></div>`
+            $("#chatarea").append(newResponse);
+
+            mostRecentMessage = userMessageText;
+            userMessage.value = "";
+
+            const newLastBotResponse = document.getElementById("lastresponse");
+            newLastBotResponse.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+                
+            let fd = new FormData();
+            let originalPrompt = userMessageText;
+            fd.append('prompt', userMessageText);
+            const response = await fetch("{{ url_for('send_chat') }}", {
+                method: 'POST',
+                body: fd
+            });
+
+            let textToDisplay = '';
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            while (true) {
+                const {value, done} = await reader.read();
+                if (done) {
+                    break;
+                }
+                textToDisplay = textToDisplay + value;
+                $('#lastresponse').children(".bot-response__text").html(marked.parse(textToDisplay));
+
+                $('.bot-response__text a').attr("target", "_blank");
+
+                const newLastBotResponse = document.getElementById("lastresponse");
+                newLastBotResponse.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+            }
+            if (!textToDisplay) {
+                $('#lastresponse').children(".bot-response__text").html("We weren't able to find a response to your question!");
+            }
+
+            $('.chat-area a').attr("target", "_blank");
+            
+            await fetch("{{ url_for('append_to_chat_history') }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    bot_response: textToDisplay
+                })
+            });
+
+            try {
+                const lastMessageResponse = await fetch("{{ url_for('last_message') }}", {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (!lastMessageResponse.ok) {
+                    throw new Error(`Response status from fetching last message: ${lastMessageResponse.status}`);
+                }
+
+                const lastMessageJson = await lastMessageResponse.json();
+                console.log(lastMessageJson);
+                if (lastMessageJson.flagged && lastMessageJson.flagged === 'yes') {
+                    $('#lastusermessage').children(".user-message__text").html(marked.parse(lastMessageJson.last_message));
+                }
+            } catch (error) {
+                console.error('Error fetching last message!');
+                console.error(error);
+            }
+            
+        }
+
+        function renderChatHistory(chatHistory) {
+            let lastUserMessage = "";
+            let lastBotResponse = "";
+            let lastUserMessageIndex = 0;
+            let lastBotResponseIndex = 0;
+            let messagesToAppend = [];
+            for (let i = 0; i < chatHistory.length; i++) {
+                let el = chatHistory[i];
+                let content = marked.parse(el.Content);
+                if (el.Role === 'user') {
+                    lastUserMessageIndex = i;
+                    let newMessage = `<div class="user-message" {idPortion}><span class="user-message__text">${content}</span></div>`;
+                    messagesToAppend.push({type: 'user', message: newMessage});
+                }
+                else if (el.Role === 'assistant') {
+                    lastBotResponseIndex = i;
+                    let newResponse = `<div class="bot-response" {idPortion}><img class="bot-response__avatar" src="${botIconSource}" alt="Orange bot"/><span class="bot-response__text">${content}</span></div>`
+                    messagesToAppend.push({type:'assistant', message: newResponse});
+                }
+            }
+
+            let lastMessage;
+            let lastId;
+            for (let i = 0; i < messagesToAppend.length; i++) {
+                let m = messagesToAppend[i];
+                let message = m.message;
+                let idPortion = "";
+                if (m.type === 'user' && i === lastUserMessageIndex) {    
+                    idPortion = 'id="lastusermessage"';
+                } else if (m.type === 'assistant' && i === lastBotResponseIndex) {
+                    idPortion = 'id="lastresponse"';
+                }
+                message = message.replace(/{idPortion}/g, idPortion);
+
+                $('#chatarea').append(message);
+
+                if (i === messagesToAppend.length - 1) {
+                    if (m.type === 'user') {
+                        lastId = 'lastusermessage';
+                    } else if (m.type === 'assistant') {
+                        lastId = 'lastresponse';
+                    }
+                }
+            }
+            lastMessage = $(`#${lastId}`)[0];
+            lastMessage.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+
+            $('.chat-area a').attr("target", "_blank");
+        }
+
+        function setConfigParameters(config) {
+            $('#chatconfig').val(JSON.stringify(config.chat_config, null, 4));
+            $('#prompttemplate').val(config.prompt_template);
+            $('#systemmessages').val(config.system_messages);
+        }
+
+        let $loading = $('#loadingDiv').hide();
+            $(document)
+            .ajaxStart(function () {
+                $loading.show();
+            })
+            .ajaxStop(function () {
+                $loading.hide();
+            });
+        $(document).ready( function() {
+
+            $.ajax({
+                url: "{{ url_for('read_data') }}",
+                type: 'GET',
+                success: function (result) {
+                    console.log(result);
+                    $('#chatarea').empty();
+                    if (result) {
+                        renderChatHistory(result.chat_history);
+                        setConfigParameters(result);
+                    }
+                }
+            });
+
+            $('#saveconfig').click(function() {
+                let data = {
+                    'chat_config': JSON.parse($('#chatconfig').val()),
+                    'prompt_template': $('#prompttemplate').val(),
+                    'system_messages': $('#systemmessages').val()
+                }
+                console.log(data);
+                $.ajax({
+                    url: "{{ url_for('save_config_new') }}",
+                    data: JSON.stringify(data),
+                    type: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            });
+            
+            
+            $('#newusermessage').keydown(async function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    await sendUserMessage();
+                } else if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    const userMessage = document.getElementById("newusermessage");
+                    userMessage.value = mostRecentMessage;
+                }
+            });
+
+            $('#sendusermessage').click(async function(event) {
+                event.preventDefault();
+                await sendUserMessage();   
+            });
+
+            $('#uploadafile').click(function(event) {
+                event.preventDefault();
+                const uploadFileButton = document.getElementById('hiddenuploadbutton');
+                uploadFileButton.click();
+                
+            });
+
+            const uploadFileButton = document.getElementById('hiddenuploadbutton');
+            uploadFileButton.onchange = (e) => {
+                $('.tool-box__uploaded-filename').css('display', 'none');
+                $('.tool-box__uploaded-filename').removeClass('error-message');
+                $('.tool-box__file-uploaded-indicator').css('display', 'none');
+                $('.tool-box__file-uploading-spinner').css('display', 'block');
+                let file = e.target.files[0];
+
+                let formData = new FormData();
+                formData.append('file', file);
+
+                console.log('Uploading file');
+
+                $.ajax({
+                    url: "{{ url_for('upload_file_new') }}",
+                    data: formData,
+                    type: 'PUT',
+                    contentType: false,
+                    processData: false,
+                    success: function() {
+                        $('.tool-box__file-uploading-spinner').css('display', 'none');
+                        $('.tool-box__uploaded-filename').css('display', 'block');
+                        $('.tool-box__uploaded-filename').html('Uploaded successfully!');
+                        $('.tool-box__file-uploaded-indicator').css('display', 'block');
+                    },
+                    error: function(error) {
+                        $('.tool-box__file-uploading-spinner').css('display', 'none');
+                        $('.tool-box__uploaded-filename').css('display', 'block');
+                        $('.tool-box__uploaded-filename').addClass('error-message');
+                        $('.tool-box__uploaded-filename').html('Error uploading!');
+                        $('.tool-box__file-uploaded-indicator').css('display', 'none');
+                        console.error('Error uploading!');
+                        console.error(error);
+                    }
+                });
+            }
+
+            $('#deletechathistory').click(function(event) {
+                event.preventDefault();
+                $("#chatarea").empty();
+
+                $.ajax({
+                    url: "{{ url_for('delete_chat_history') }}",
+                    type: 'DELETE'
+                });
+            });
+
+            $('#resetindex').click(function(event) {
+                event.preventDefault();
+                $.ajax({
+                    url: "{{ url_for('reset_index') }}",
+                    type: 'DELETE',
+                    success: function() {
+                        $('.tool-box__uploaded-filename').removeClass('error-message');
+                        $('.tool-box__file-uploading-spinner').css('display', 'none');
+                        $('.tool-box__uploaded-filename').css('display', 'block');
+                        $('.tool-box__uploaded-filename').html('Index cleared!');
+                        $('.tool-box__file-uploaded-indicator').css('display', 'block');
+                    },
+                    error: function(error) {
+                        $('.tool-box__uploaded-filename').html('Error resetting index!');
+                        console.error('Error resetting index!');
+                        console.error(error);
+                    }
+                })
+            })
+        });
+    </script>
+
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document AI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='site.css') }}" />
+</head>
+<body>
+    <header>
+        <nav>
+            <ul class="header-items">
+                <li class="header-items__company header-item">
+                    <img class="header-items__company-logo" src="{{ url_for('static', filename='Courthouse logo 100x100.png') }}" width="50" height="50"/>  
+                    <span class="header-items__company-name">Superior Court of Orange County</span>
+                </li>
+                <li class="header-items__title header-item">
+                    <span class="header-items__title-text">AI Studio (Lite)</span>
+                </li>
+                <li class="header-items__right header-item">
+                    <div class="header-items-placeholder"></div>
+                </li>
+            </ul>
+        </nav>
+    </header>
+
+    <div class="configform-container-block" id="configform-container" class="modal">
+        <form action="/" method="post" id="configform" >
+            <h4>Chat Config:</h4>
+            <textarea name="chatconfig" placeholder="Chat config" rows="10" id="chatconfig">{{ chatconfig | safe }}</textarea>
+            <h4>System Message:</h4>
+            <textarea type="text" name="systemmessages" placeholder="System messages" rows="10" id="systemmessages">{{ systemmessages | safe }}</textarea>
+            <h4>Prompt Template:</h4>
+            <textarea type="text" name="prompttemplate" placeholder="Prompt template" rows="10" id="prompttemplate"></textarea>
+            <a href="#" id="saveconfig" class="configform__save-button" rel="modal:close">Save</a>
+        </form>
+    </div>
+
+    <section class="main">
+        <div class="chat-box">
+            <div class="tool-box">
+                <div class="tool-box-file-area">
+                    <p class="tool-box__uploaded-filename"></p>
+                    <svg class="tool-box__file-uploading-spinner" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle fill="#000000" stroke="#000000" stroke-width="6" r="15" cx="35" cy="100"><animate attributeName="cx" calcMode="spline" dur="2" values="35;165;165;35;35" keySplines="0 .1 .5 1;0 .1 .5 1;0 .1 .5 1;0 .1 .5 1" repeatCount="indefinite" begin="0"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" opacity=".8" r="15" cx="35" cy="100"><animate attributeName="cx" calcMode="spline" dur="2" values="35;165;165;35;35" keySplines="0 .1 .5 1;0 .1 .5 1;0 .1 .5 1;0 .1 .5 1" repeatCount="indefinite" begin="0.05"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" opacity=".6" r="15" cx="35" cy="100"><animate attributeName="cx" calcMode="spline" dur="2" values="35;165;165;35;35" keySplines="0 .1 .5 1;0 .1 .5 1;0 .1 .5 1;0 .1 .5 1" repeatCount="indefinite" begin=".1"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" opacity=".4" r="15" cx="35" cy="100"><animate attributeName="cx" calcMode="spline" dur="2" values="35;165;165;35;35" keySplines="0 .1 .5 1;0 .1 .5 1;0 .1 .5 1;0 .1 .5 1" repeatCount="indefinite" begin=".15"></animate></circle><circle fill="#000000" stroke="#000000" stroke-width="6" opacity=".2" r="15" cx="35" cy="100"><animate attributeName="cx" calcMode="spline" dur="2" values="35;165;165;35;35" keySplines="0 .1 .5 1;0 .1 .5 1;0 .1 .5 1;0 .1 .5 1" repeatCount="indefinite" begin=".2"></animate></circle></svg>
+                    <svg class="tool-box__file-uploaded-indicator" width="28px" height="28px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                        <g id="icomoon-ignore">
+                        </g>
+                        <path d="M16 2.672c-7.361 0-13.328 5.967-13.328 13.328s5.968 13.328 13.328 13.328c7.361 0 13.328-5.967 13.328-13.328s-5.967-13.328-13.328-13.328zM16 28.262c-6.761 0-12.262-5.501-12.262-12.262s5.5-12.262 12.262-12.262c6.761 0 12.262 5.501 12.262 12.262s-5.5 12.262-12.262 12.262z" fill="#008000">
+                        
+                        </path>
+                        <path d="M22.667 11.241l-8.559 8.299-2.998-2.998c-0.312-0.312-0.818-0.312-1.131 0s-0.312 0.818 0 1.131l3.555 3.555c0.156 0.156 0.361 0.234 0.565 0.234 0.2 0 0.401-0.075 0.556-0.225l9.124-8.848c0.317-0.308 0.325-0.814 0.018-1.131-0.309-0.318-0.814-0.325-1.131-0.018z" fill="#008000">
+                        
+                        </path>
+                    </svg>
+                    <button class="tool-box__upload-button tool-box-button" title="Upload a file" type="button" id="uploadafile">
+                        <svg class="tool-box-button-icon" width="32px" height="32px" viewBox="-3 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                            <g id="icomoon-ignore">
+                            </g>
+                            <path d="M26.221 16c0-7.243-5.871-13.113-13.113-13.113s-13.113 5.87-13.113 13.113c0 7.242 5.871 13.113 13.113 13.113s13.113-5.871 13.113-13.113zM1.045 16c0-6.652 5.412-12.064 12.064-12.064s12.064 5.412 12.064 12.064c0 6.652-5.411 12.064-12.064 12.064-6.652 0-12.064-5.412-12.064-12.064z" fill="#000000">
+                            
+                            </path>
+                            <path d="M18.746 15.204l0.742-0.742-6.379-6.379-6.378 6.379 0.742 0.742 5.112-5.112v12.727h1.049v-12.727z" fill="#000000">
+                            
+                            </path>
+                        </svg>
+                    </button>
+                    <input type="file" id="hiddenuploadbutton" style="display: none;"/>
+                    <button class="tool-box__reset-index-button tool-box-button" title="Reset index" type="button" id="resetindex">
+                        <svg class="tool-box-button-icon" width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                            <g id="icomoon-ignore">
+                            </g>
+                            <path d="M19.961 14.914l-0.754-0.754-3.206 3.207-3.207-3.207-0.754 0.754 3.207 3.207-3.217 3.216 0.754 0.754 3.218-3.216 3.217 3.216 0.754-0.754-3.217-3.216z" fill="#000000">
+                            
+                            </path>
+                            <path d="M29.328 6.938h-26.656v1.066h0.784l0.283 2.133c0 0.851 0.501 1.579 1.221 1.921l1.88 10.969c0.197 1.116 0.912 2.036 2.036 2.036h14.249c1.123 0 1.806-0.903 2.036-2.036l1.881-10.969c0.72-0.343 1.221-1.070 1.221-1.921l0.283-2.133h0.784v-1.066zM24.112 22.83c-0.092 0.443-0.341 1.166-0.988 1.166h-14.249c-0.726 0-0.938-0.884-0.985-1.15l-1.813-10.577h19.845l-1.811 10.56zM27.205 9.997l-0.009 0.070v0.070c0 0.588-0.479 1.066-1.066 1.066h-20.259c-0.588 0-1.066-0.478-1.066-1.066v-0.070l-0.009-0.070-0.264-1.993h22.938l-0.264 1.993z" fill="#000000">
+                            
+                            </path>
+                            </svg>
+                    </button>
+                </div>
+                <a href="#configform-container" rel="modal:open" class="tool-box__config-button tool-box-button" title="Config settings">
+                    <svg class="tool-box-button-icon" width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                        <g id="icomoon-ignore">
+                        </g>
+                        <path d="M17.599 3.738v2.598l0.8 0.207c0.905 0.234 1.768 0.597 2.566 1.081l0.715 0.434 1.86-1.86 2.262 2.262-1.888 1.888 0.407 0.708c0.451 0.785 0.788 1.635 1.002 2.527l0.196 0.817h2.744v3.199h-2.806l-0.216 0.782c-0.233 0.844-0.583 1.654-1.040 2.406l-0.434 0.716 2.036 2.035-2.262 2.262-2.064-2.064-0.707 0.407c-0.734 0.422-1.531 0.745-2.368 0.961l-0.8 0.206v2.951h-3.199v-2.951l-0.8-0.206c-0.837-0.216-1.634-0.539-2.368-0.961l-0.708-0.407-2.064 2.064-2.262-2.262 2.036-2.035-0.434-0.716c-0.457-0.753-0.807-1.562-1.040-2.406l-0.216-0.782h-2.806v-3.199h2.744l0.196-0.817c0.213-0.891 0.551-1.742 1.002-2.527l0.407-0.708-1.888-1.888 2.262-2.262 1.86 1.86 0.715-0.434c0.798-0.484 1.661-0.848 2.566-1.081l0.8-0.207v-2.598h3.199zM16 20.799c2.646 0 4.798-2.153 4.798-4.799s-2.152-4.799-4.798-4.799-4.798 2.153-4.798 4.799c0 2.646 2.152 4.799 4.798 4.799zM18.666 2.672h-5.331v2.839c-1.018 0.263-1.975 0.67-2.852 1.202l-2.022-2.022-3.769 3.77 2.065 2.065c-0.498 0.867-0.875 1.81-1.114 2.809h-2.97v5.331h3.060c0.263 0.953 0.655 1.85 1.156 2.676l-2.198 2.198 3.769 3.77 2.241-2.241c0.816 0.469 1.7 0.828 2.633 1.069v3.191h5.331v-3.191c0.933-0.241 1.817-0.6 2.633-1.069l2.241 2.241 3.769-3.77-2.198-2.198c0.501-0.826 0.893-1.723 1.156-2.676h3.060v-5.331h-2.97c-0.239-0.999-0.616-1.941-1.114-2.809l2.065-2.065-3.769-3.77-2.022 2.022c-0.877-0.532-1.834-0.939-2.852-1.202v-2.839h-0zM16 19.733c-2.062 0-3.732-1.671-3.732-3.733s1.67-3.732 3.732-3.732 3.732 1.671 3.732 3.732c0 2.062-1.67 3.733-3.732 3.733v0z" fill="#000000">
+                        
+                        </path>
+                    </svg>
+                </a>
+                <button class="tool-box__trash-button tool-box-button" title="Delete chat history" type="button" id="deletechathistory">
+                    <svg class="tool-box-button-icon" width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+                        <g id="icomoon-ignore">
+                        </g>
+                        <path d="M26.129 5.871h-5.331v-1.066c0-1.178-0.955-2.132-2.133-2.132h-5.331c-1.178 0-2.133 0.955-2.133 2.132v1.066h-5.331v1.066h1.099l1.067 20.259c0 1.178 0.955 2.133 2.133 2.133h11.729c1.178 0 2.133-0.955 2.133-2.133l1.049-20.259h1.051v-1.066zM12.268 4.804c0-0.588 0.479-1.066 1.066-1.066h5.331c0.588 0 1.066 0.478 1.066 1.066v1.066h-7.464v-1.066zM22.966 27.14l-0.002 0.027v0.028c0 0.587-0.478 1.066-1.066 1.066h-11.729c-0.587 0-1.066-0.479-1.066-1.066v-0.028l-0.001-0.028-1.065-20.203h15.975l-1.046 20.204z" fill="#000000">
+                        
+                        </path>
+                        <path d="M15.467 9.069h1.066v17.060h-1.066v-17.060z" fill="#000000">
+                        
+                        </path>
+                        <path d="M13.358 26.095l-1.091-17.027-1.064 0.068 1.091 17.027z" fill="#000000">
+                        
+                        </path>
+                        <path d="M20.805 9.103l-1.064-0.067-1.076 17.060 1.064 0.067z" fill="#000000">
+                        
+                        </path>
+                        </svg>
+                </button>
+            </div>
+            <div class="chat-area" id="chatarea">
+            </div>
+            <div class="command-box">
+                
+                <form class="command-box__form" action="/" method="post" id="commandboxform">
+                    <input class="command-box__user-message" type="text" name="usermessage" placeholder="Type in your message..." id="newusermessage">
+                    <button class="command-box__send-user-message" type="submit" title="Send your message" id="sendusermessage">
+                        <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <g clip-path="url(#clip0_15_829)">
+                            
+                            <path d="M19.364 5.05026L3.10051 8.58579L10.8787 13.5355M19.364 5.05026L15.8284 21.3137L10.8787 13.5355M19.364 5.05026L10.8787 13.5355" stroke="#000000" stroke-linecap="round" stroke-linejoin="round"/>
+                            </g>
+                            <defs>
+                            <clipPath id="clip0_15_829">
+                            <rect width="24" height="24" fill="white"/>
+                            </clipPath>
+                            </defs>
+                            </svg>
+                    </button>
+                    
+                </form>
+            </div>
+        </div>
+    </section>
+
+     <footer>
+        <p>&copy; 2024 Superior Court of Orange County. All rights reserved.</p>
+    </footer>
+</body>
+</html>
