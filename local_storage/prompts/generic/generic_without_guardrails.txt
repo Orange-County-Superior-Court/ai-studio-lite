@@ -1,0 +1,6 @@
+BEGIN: USER_INPUT_SECTION
+
+Below is the user question:
+{user_message}
+
+END: USER_INPUT_SECTION
