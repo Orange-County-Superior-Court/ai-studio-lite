@@ -8,7 +8,6 @@ from flask import send_from_directory
 from flask import session, Response
 from werkzeug.utils import secure_filename
 
-from langchain.document_loaders import PyPDFLoader
 from flows.chat import Chat
 from components.file_storage.files import FileStorage
 from components.security.guards import Security
