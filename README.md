@@ -41,6 +41,7 @@ Contents of sample environment:
 #Environment Settings
 FLASK_APP='app'
 FLASK_ENV='development'
+USER_AGENT='LOCAL-ENVIRONMENT'
  
 #Ollama API Settings
 Ollama_Endpoint =  'http://localhost:11434'
