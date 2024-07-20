@@ -28,11 +28,17 @@ git clone https://github.com/Orange-County-Superior-Court/ai-studio-lite
 - Export Files to Zip and save in local directory
 ![Image](./documentation/reference_images/export_files.png)
 
-### Create Settings File (```.env```)
+### Extract and Save files Locally
 
-Please note the settings included in the sample will be a test environment available from 7/22 (Mon) - 7/25 (Thurs)
+Unzip the file if you directly downloaded it by right clicking and selecting "Extract All", otherwise skip this step  
+![Image](./documentation/reference_images/Extract.png)
+
+### Create Settings File ```.env``` from ```.env.sample```
 
 Copy the contents of the provided [.env.sample](./.env.sample)
+
+*Please note settings from a test environment are available from 7/22 (Mon) - 7/25 (Thurs)*
+
 Create a new file named ```.env``` and paste in configurations from the sample. Update the settings for your specific azure environment.
 
 Contents of sample environment:
@@ -57,47 +63,51 @@ ChatbotId = 'general-chatbot'
 
 ## Configuring Runtime Environment
 
-### Install and Configure Virtual Environment ```venv``` Folder
+### Install Python
 
-#### Open File in Command Line
+- Download [Python](https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe)
 
-1. Navigate to the where you have the repo installed
-2. Unzip the file if you directly downloaded it by right clicking and selecting "Extract All", otherwise skip this step  
-![Image](./documentation/reference_images/Extract.png)
-3. Navigate into the extracted folder then right click the subsequent folder and select: "Open in Terminal"
+### Install Python Packages
+
+Navigate into the extracted folder then right click the subsequent folder and select: "Open in Terminal"
 ![Image](./documentation/reference_images/Terminal.png)
 
-#### Create virtual environment and install dependencies
+Run the following scripts in terminal
 
-##### Components
-
-The following components are needed to run the solution. Some are optional, depending if you are wanting to run the models on your local machine or not.
-
-- [Python Installation](https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe)
-- [Ollama (Optional)](https://ollama.com/download/OllamaSetup.exe)
-
-##### For Simplicity, you can run this setup.ps1 script
-
-For transparency here is the [script](#setupps1) for reference.
-
-- This power shell script will check to see if you have **python** installed.
-- Ask if you want to **install Ollama** (say Yes if wanting to run locally)
-- Install the dependent **python packages** from [requirements.txt](./requirements.txt) file.
-- Start the Application
-
-From the terminal, run the command:
+#### Install virtual environment package
 
 ``` powershell
-./setup.ps1
+py -m pip install virtualenv
 ```
 
-- This process will take a couple minutes to install all the required packages and their dependencies so please be patient
+#### Create Virtual Environment
 
-- **If you want to run models locally say** *"Yes"* when prompted if you want to install Ollama (Note: will need to update [chat setttings](#ollama-settings))
+``` powershell
+py -m virtualenv venv
+```
 
-  - It is worth noting that if you are stuck on "Installing Ollama" for too long without a separate installation window opening up, then you should consider skipping its installation and just installing it [manually](#install-ollama-manually-optional)
+#### Activate the Environment
 
-![Image](./documentation/reference_images/setup.png)
+``` powershell
+.\venv\Scripts\Activate.ps1
+```
+
+#### Install Requirements
+
+``` powershell
+pip install -r requirements.txt
+```
+
+This process will take a couple minutes to install all the required packages and their dependencies so please be patient...
+
+#### Start App
+
+``` python
+flask run
+```
+
+*If you want to run models locally using Ollama*
+Please follow the [Ollama Installation](#install-ollama-manually-optional).
 
 ## Let's Build a Filing Fees Chatbot
 
@@ -329,7 +339,35 @@ ChatbotId = 'general-chatbot'
 }
 ```
 
-## References
+## Reference Sections
+
+## Install Ollama Manually (Optional)
+
+Download [Ollama](https://ollama.com/download/OllamaSetup.exe)
+
+Once download completes open power shell
+
+Pull Chat Model
+
+``` powershell
+ollama pull phi3:mini
+```
+
+Pull Embedding Model
+
+``` powershell
+ollama pull nomic-embed-text
+```
+
+Verify Models were installed
+
+``` powershell
+ollama list
+```
+
+Update chat settings in the Studio
+
+[Ollama Settings](#ollama-settings)
 
 ### setup.ps1
 
@@ -429,40 +467,3 @@ Write-Host "To start the application in the future, activate the virtual environ
 
 flask run
 ```
-
-## Starting the App
-
-### Automated
-
-For a one-command start, you can run the startup script ```./run.ps1```
-
-### Manual
-
-- Open Power Shell
-
-- Change to Project Directory
-
-``` powershell
-cd ./project_directory
-```
-
-- Make sure you are in the virtual environment by running
-
-``` powershell
-venv/Scripts/Activate
-```
-
-- Start App
-
-``` python
-flask run
-```
-
-## Install Ollama Manually (Optional)
-
-- To install Ollama manually for hosting the LLM ([Ollama](https://visualstudio.microsoft.com/visual-cpp-build-tools/))
-  - [Windows](https://ollama.com/download/OllamaSetup.exe)
-- Once installed navigate to powershell
-- Run ```ollama pull phi3:mini```
-- Run ```ollama pull nomic-embed-text```
-- Confirm model is installed with ```ollama list```
