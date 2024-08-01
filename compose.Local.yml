@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+   api:
+     image: ai-studiolite:latest
+     ports:
+       - "8001:80"
+     restart: always
+     env_file: "app/.env"
